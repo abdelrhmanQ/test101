@@ -1,0 +1,65 @@
+rules_version = '2';
+
+// ====================================================================
+// Firestore Security Rules
+// --------------------------------------------------------------------
+// Two tiers of access, enforced server-side (cannot be bypassed from
+// the browser console):
+//   * Admins  -> full read/write on everything.
+//   * Employees (any other signed-in user) -> can read everything and
+//     write only the collections the cashier workflow needs
+//     (trainees, attendance, payments, meta). They CANNOT touch
+//     employees or expenses (salaries / financial admin data).
+//
+// Admin identity is the user's verified email from the auth token, so
+// no backend or custom claims are required. To add another admin, add
+// their email to the isAdmin() list below.
+//
+// Deploy in: Firebase Console > Firestore Database > Rules > Publish.
+// ====================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() && request.auth.token.email in [
+        'abdrhmanq5005@gmail.com'
+      ];
+    }
+
+    // --- Cashier-writable collections (both roles) ---
+    match /trainees/{doc}   { allow read, write: if signedIn(); }
+    match /attendance/{doc} { allow read, write: if signedIn(); }
+    match /groups/{doc}     { allow read, write: if signedIn(); }
+    match /sessions/{doc}   { allow read, write: if signedIn(); }
+    match /staffAttendance/{doc} { allow read, write: if signedIn(); }
+    match /feedback/{doc}   { allow read, write: if signedIn(); }
+    match /meta/{doc}       { allow read, write: if signedIn(); }
+
+    // Payments: cashiers may CREATE them (new registration / renewal) but
+    // only admins may edit or delete an existing payment record.
+    match /payments/{doc} {
+      allow read, create: if signedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // --- Admin-only collections ---
+    match /employees/{doc} {
+      allow read:  if signedIn();
+      allow write: if isAdmin();
+    }
+    match /expenses/{doc} {
+      allow read:  if signedIn();
+      allow write: if isAdmin();
+    }
+
+    // Deny anything not explicitly matched above.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
